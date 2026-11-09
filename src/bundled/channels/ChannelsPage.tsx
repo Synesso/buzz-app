@@ -2247,6 +2247,7 @@ function ChannelWorkspace({
               ])}
               linkedId={draft.linked}
               region={draft.region}
+              lead={draft.lead}
               source={linkedSource}
               visit={navigation}
               focusRequest={
