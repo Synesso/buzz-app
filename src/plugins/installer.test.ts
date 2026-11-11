@@ -504,12 +504,22 @@ it("reports only recognized installation source kinds from ready catalog data", 
   const windowsFolder = info("example.windows-folder");
   windowsFolder.updateSource = {
     root: "C:\\plugins\\example-folder",
-    path: ".",
+    path: "nested\\folder name",
+  };
+  const spacedFolder = info("example.spaced-folder");
+  spacedFolder.updateSource = {
+    root: "/plugins/example folder",
+    path: "nested folder/插件",
   };
   const uncFolder = info("example.unc-folder");
   uncFolder.updateSource = {
     root: "\\\\server\\share\\plugins",
     path: "nested/plugin",
+  };
+  const invalidWindowsFolder = info("example.invalid-windows-folder");
+  invalidWindowsFolder.updateSource = {
+    root: "C:\\plugins\\example-folder",
+    path: "..\\outside",
   };
   const scpGit = info("example.scp-git");
   scpGit.updateSource = {
@@ -558,7 +568,9 @@ it("reports only recognized installation source kinds from ready catalog data", 
       url,
       folder,
       windowsFolder,
+      spacedFolder,
       uncFolder,
+      invalidWindowsFolder,
       scpGit,
       sshGit,
       pinnedGit,
@@ -573,7 +585,9 @@ it("reports only recognized installation source kinds from ready catalog data", 
     "example.url": "url",
     "example.folder": "folder",
     "example.windows-folder": "folder",
+    "example.spaced-folder": "folder",
     "example.unc-folder": "folder",
+    "example.invalid-windows-folder": "unavailable",
     "example.scp-git": "git",
     "example.ssh-git": "git",
     "example.pinned-git": "git",

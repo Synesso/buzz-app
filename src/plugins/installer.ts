@@ -145,6 +145,22 @@ function relativePath(value: unknown) {
     : null;
 }
 
+function relativeFolderPath(value: unknown, root: string) {
+  if (value === ".") return value;
+  if (typeof value !== "string" || !value || value.includes("\0")) return null;
+
+  const windowsRoot =
+    /^[A-Za-z]:[\\/]/.test(root) || /^\\\\[^\\]+\\[^\\]+(?:\\|$)/.test(root);
+  if (windowsRoot ? /^[\\/]|^[A-Za-z]:/.test(value) : value.startsWith("/"))
+    return null;
+
+  const segments = value.split(windowsRoot ? /[\\/]+/ : /\/+/);
+  return segments.some((segment) => segment === "..") ||
+    !segments.some((segment) => segment !== "" && segment !== ".")
+    ? null
+    : value;
+}
+
 function isAbsoluteFolderRoot(value: string) {
   return (
     !value.includes("\0") &&
@@ -429,7 +445,7 @@ function savedInstallationSourceKind(
     typeof source.root === "string" &&
     isAbsoluteFolderRoot(source.root) &&
     typeof source.path === "string" &&
-    relativePath(source.path) !== null
+    relativeFolderPath(source.path, source.root) !== null
   )
     return "folder";
   return "unavailable";
