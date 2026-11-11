@@ -38,7 +38,7 @@ export type SoloRegionSource = Readonly<{
   component: ComponentType<SoloRegionProps>;
   /** Compose tasks with ordinary chats in the host's existing workspace inventory. */
   composeWorkspaces?: true;
-  /** Select a newly created host workspace using this source’s Lead/draft policy. */
+  /** Select a newly created host workspace using this source’s own selection policy. */
   openWorkspace?(
     binding: SoloRegionBinding,
     workspaceId: string,
@@ -70,17 +70,6 @@ export type SoloChatInput = Readonly<{
 }>;
 export type SoloRegionHandle = Readonly<{
   label: string;
-  /** Freshly resolve this source’s optional lead. Unreadable leads return no channel; archived leads retain their link. */
-  workspaceLead(
-    binding: SoloRegionBinding,
-    workspaceId: string,
-  ): Promise<string | undefined>;
-  /** Save the optional lead with the existing workspace revision checks and readback. Concurrent devices retain the workspace writer’s conflict policy. */
-  setWorkspaceLead(
-    binding: SoloRegionBinding,
-    workspaceId: string,
-    channelId: string,
-  ): Promise<string | undefined>;
   /** Open New chat for this region. Its first send creates the chat with this
    * region's label; until then it is only a draft. With `lead`, the chat starts
    * as the workspace's lead while the draft still targets that workspace. */
@@ -187,11 +176,7 @@ export type SoloNavigation = Readonly<{
 
 export type SoloWorkspaceSnapshot = Readonly<{
   status: "loading" | "ready" | "unavailable";
-  workspaces: readonly Readonly<{
-    id: string;
-    name: string;
-    lead?: Readonly<{ region: string; channelId: string }>;
-  }>[];
+  workspaces: readonly Readonly<{ id: string; name: string }>[];
   canCreate: boolean;
   error?: string;
 }>;

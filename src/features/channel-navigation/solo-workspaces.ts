@@ -22,7 +22,6 @@ export function createSoloWorkspaces(
     Preferences,
     {
       source: ReturnType<Preferences["snapshot"]>;
-      leads: ReturnType<Preferences["leads"]["snapshot"]>;
       value: SoloWorkspaceSnapshot;
     }
   >();
@@ -36,16 +35,9 @@ export function createSoloWorkspaces(
       const preferences = resolve(binding);
       if (!preferences) return ended;
       const source = preferences.snapshot();
-      // Leads join by workspace ID, so a removed workspace's Lead never shows.
-      // Their status never decides the catalog's.
-      const leads = preferences.leads.snapshot();
       const canCreate = preferences.sectionCreationWritable;
       const previous = cache.get(preferences);
-      if (
-        previous?.source === source &&
-        previous.leads === leads &&
-        previous.value.canCreate === canCreate
-      )
+      if (previous?.source === source && previous.value.canCreate === canCreate)
         return previous.value;
       const value: SoloWorkspaceSnapshot = Object.freeze({
         status:
@@ -57,31 +49,22 @@ export function createSoloWorkspaces(
               ? "ready"
               : "loading",
         workspaces: Object.freeze(
-          (source.data?.sections ?? []).map(({ id, name }) => {
-            const lead = Object.hasOwn(leads.leads, id)
-              ? leads.leads[id]
-              : undefined;
-            return Object.freeze({
-              id,
-              name,
-              ...(lead ? { lead: Object.freeze({ ...lead }) } : {}),
-            });
-          }),
+          (source.data?.sections ?? []).map(({ id, name }) =>
+            Object.freeze({ id, name }),
+          ),
         ),
         canCreate,
         ...(source.error ? { error: source.error } : {}),
       });
-      cache.set(preferences, { source, leads, value });
+      cache.set(preferences, { source, value });
       return value;
     },
     subscribe(binding, listener) {
       const preferences = current(binding);
       const stopPreferences = preferences.subscribe(listener);
-      const stopLeads = preferences.leads.subscribe(listener);
       const stopConnection = subscribeConnection(listener);
       return () => {
         stopPreferences();
-        stopLeads();
         stopConnection();
       };
     },

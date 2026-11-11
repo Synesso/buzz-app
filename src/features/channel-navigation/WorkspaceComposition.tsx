@@ -1,21 +1,17 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useLayoutEffect,
   useEffectEvent,
-  useRef,
   type ReactNode,
 } from "react";
 import {
   NavigationCard,
   NavigationItem,
 } from "../../shared/design-system/ui/NavigationItem";
-import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { MenuItem } from "../../shared/design-system/ui/Menu";
 import { PencilSimpleIcon } from "../../shared/design-system/icons";
-import type { LeadsSnapshot } from "../relay/solo-preferences";
 import { SoloDisclosure } from "./SoloDisclosure";
 import type { SoloWorkspaceProps } from "./solo-navigation-contract";
 import styles from "./WorkspaceComposition.module.css";
@@ -23,11 +19,6 @@ import styles from "./WorkspaceComposition.module.css";
 /** The existing Solo inventory retains every row, menu, mutation and disclosure. */
 export type WorkspaceComposition = Readonly<{
   leadDraft?: string;
-  /** The separate Leads record. Until it is read, a Lead workspace is not selected. */
-  leads?: Readonly<{
-    status: LeadsSnapshot["status"];
-    refresh(): Promise<boolean>;
-  }>;
   ordinary: ReactNode;
   chats: ReactNode;
   workspaces: readonly Readonly<{
@@ -55,7 +46,7 @@ export function RegionChats({ all = false }: { all?: boolean }) {
   return (all ? parts?.ordinary : parts?.chats) ?? null;
 }
 
-/** One shared workspace surface. A source supplies tasks and its optional lead. */
+/** One shared workspace surface. A source supplies its tasks and selection. */
 export function RegionWorkspace(props: SoloWorkspaceProps) {
   const parts = useContext(WorkspaceCompositionContext);
   const workspace = parts?.workspaces.find(
@@ -65,29 +56,6 @@ export function RegionWorkspace(props: SoloWorkspaceProps) {
   useLayoutEffect(() => {
     if (props.reveal) reveal();
   }, [props.reveal]);
-  const reading = useRef(false);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const leads = props.leadWorkspaceId ? parts?.leads : undefined;
-  // An unread Lead is not an absent one: its draft could duplicate the Lead.
-  const select = async () => {
-    if (!leads || leads.status === "ready") {
-      props.onSelect?.();
-      return;
-    }
-    if (reading.current) return;
-    reading.current = true;
-    try {
-      if ((await leads.refresh()) && mounted.current) props.onSelect?.();
-    } finally {
-      reading.current = false;
-    }
-  };
   if (!workspace || !props.id) return null;
   const title = props.id ? workspace.name : "Unfiled";
   const disclosure = (
@@ -109,7 +77,7 @@ export function RegionWorkspace(props: SoloWorkspaceProps) {
             parts?.leadDraft === props.leadWorkspaceId)
         }
         data-solo-workspace-id={workspace.id}
-        onClick={() => void select()}
+        onClick={() => props.onSelect?.()}
       />
       {disclosure}
     </div>
@@ -121,20 +89,6 @@ export function RegionWorkspace(props: SoloWorkspaceProps) {
       <NavigationCard
         tone="tonal"
         data-drop-target={props.dropTarget || undefined}
-        footer={
-          leads?.status === "error" && (
-            <p role="alert" className="text-body-sm text-danger">
-              Lead unavailable.{" "}
-              <Button
-                variant="plain"
-                size="inline"
-                onClick={() => void leads.refresh()}
-              >
-                Retry
-              </Button>
-            </p>
-          )
-        }
         body={workspace.panel(props.children)}
       >
         {workspace.header(

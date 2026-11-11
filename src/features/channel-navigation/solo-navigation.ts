@@ -6,14 +6,9 @@ import type { RelaySession } from "../relay/session";
 import type { JsonValue } from "../navigation/targets";
 import type { PluginManager } from "../../plugins/manager";
 import { relayPartition } from "../relay/partition";
-import { channelIdentity } from "../relay/channel-labels";
-import { soloChannelMetadata } from "../relay/discovery";
-import { lifecycleChannelId } from "../relay/channel-lifecycle-protocol";
-import { hasTag, tag } from "../relay/events";
 import { ownSolo, soloLabels } from "../solo/labels";
 import { regionLabels, soloRegionLabel } from "../solo/region-labels";
 import { soloDraftTarget } from "./routes";
-import { leadUnavailableMessage } from "../relay/solo-preferences";
 import { createSoloWorkspaces } from "./solo-workspaces";
 import {
   projectSoloRegions,
@@ -457,139 +452,11 @@ export class SoloNavigationService extends Service implements SoloNavigation {
           }
         : {};
     };
-    const readLead = async (binding: SoloRegionBinding, channelId: string) => {
-      lifecycleChannelId(channelId);
-      const session = current(binding);
-      const runtime = [...host.runtimes.values()].find(
-        (item) => item.source.identity === identity,
-      );
-      const signal = runtime?.controller.signal;
-      if (!signal || !session.snapshotRead || !session.relayAuthor)
-        throw new Error("Workspace leads are unavailable.");
-      const events = await session.snapshotRead(
-        [
-          {
-            kinds: [39000],
-            authors: [session.relayAuthor],
-            "#d": [channelId],
-            consistency: "strong",
-            limit: 1,
-          },
-        ],
-        { signal },
-      );
-      current(binding);
-      signal.throwIfAborted();
-      if (
-        events.length > 1 ||
-        events.some(
-          (event) =>
-            event.kind !== 39000 ||
-            event.pubkey !== session.relayAuthor ||
-            !hasTag(event, "d", channelId),
-        )
-      )
-        throw new Error("The workspace lead read could not be confirmed.");
-      const metadata = events[0];
-      if (!metadata) return;
-      const facts = channelIdentity(metadata);
-      if (
-        !soloChannelMetadata(metadata) ||
-        facts.creator !== binding.viewer ||
-        regionLabels(facts.labels).sort()[0] !== label
-      )
-        throw new Error(
-          "Only your own task in this region can lead a workspace.",
-        );
-      return metadata;
-    };
     this.contributions.register(this.ctx, { ...source, identity });
     return Object.freeze({
       label,
-      async workspaceLead(binding, workspaceId) {
-        const session = current(binding);
-        await Promise.all([
-          session.soloPreferences.refresh(),
-          session.soloPreferences.leads.refresh(),
-        ]);
-        current(binding);
-        const catalog = host.workspaces.snapshot(binding);
-        if (catalog.status !== "ready")
-          throw new Error("Workspaces are unavailable. Refresh and try again.");
-        const workspace = catalog.workspaces.find(
-          ({ id }) => id === workspaceId,
-        );
-        if (!workspace) throw new Error("The workspace is unavailable.");
-        // An unread Lead is not an absent one: a draft could duplicate it.
-        if (session.soloPreferences.leads.snapshot().status !== "ready")
-          throw new Error(leadUnavailableMessage);
-        if (!workspace.lead) return;
-        if (workspace.lead.region !== label)
-          throw new Error(
-            "This workspace's lead belongs to another task source.",
-          );
-        return (await readLead(binding, workspace.lead.channelId))
-          ? workspace.lead.channelId
-          : undefined;
-      },
-      async setWorkspaceLead(binding, workspaceId, channelId) {
-        const session = current(binding);
-        const runtime = [...host.runtimes.values()].find(
-          (item) => item.source.identity === identity,
-        );
-        const signal = runtime?.failed ? undefined : runtime?.controller.signal;
-        if (!signal || signal.aborted)
-          throw new Error("Workspace leads require a running task source.");
-        const channel = await readLead(binding, channelId);
-        current(binding);
-        signal.throwIfAborted();
-        if (!channel || tag(channel, "archived") === "true")
-          throw new Error(
-            "Only your own task in this region can lead a workspace.",
-          );
-        await Promise.all([
-          session.soloPreferences.refresh(),
-          session.soloPreferences.leads.refresh(),
-        ]);
-        current(binding);
-        const catalog = host.workspaces.snapshot(binding);
-        if (catalog.status !== "ready")
-          throw new Error("Workspaces are unavailable. Refresh and try again.");
-        const workspace = catalog.workspaces.find(
-          ({ id }) => id === workspaceId,
-        );
-        if (!workspace) return;
-        if (session.soloPreferences.leads.snapshot().status !== "ready")
-          throw new Error(leadUnavailableMessage);
-        const previous = workspace.lead;
-        if (previous && previous.channelId !== channelId) {
-          if (previous.region !== label)
-            throw new Error(
-              "This workspace's lead belongs to another task source.",
-            );
-          if (await readLead(binding, previous.channelId))
-            return previous.channelId;
-          current(binding);
-        }
-        const saved = await session.soloPreferences.setWorkspaceLead(
-          {
-            workspaceId,
-            lead: { region: label, channelId },
-            ...(previous ? { expected: previous.channelId } : {}),
-          },
-          signal,
-        );
-        current(binding);
-        return saved ? channelId : undefined;
-      },
       openDraft(binding, input = {}) {
-        const session = current(binding);
-        // An unread Lead is not an absent one: a draft could duplicate it.
-        if (
-          input.lead &&
-          session.soloPreferences.leads.snapshot().status !== "ready"
-        )
-          throw new Error(leadUnavailableMessage);
+        current(binding);
         const { workspace } = input;
         if (
           (workspace !== undefined &&

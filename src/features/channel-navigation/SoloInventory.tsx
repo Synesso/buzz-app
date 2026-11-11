@@ -111,10 +111,6 @@ export function SoloInventory({
     session.soloPreferences.subscribe,
     session.soloPreferences.snapshot,
   );
-  const leads = useSyncExternalStore(
-    session.soloPreferences.leads.subscribe,
-    session.soloPreferences.leads.snapshot,
-  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -373,15 +369,6 @@ export function SoloInventory({
             compose({
               ...parts,
               ...(leadDraft ? { leadDraft } : {}),
-              leads: {
-                status: leads.status,
-                refresh: async () => {
-                  await session.soloPreferences.leads.refresh();
-                  return (
-                    session.soloPreferences.leads.snapshot().status === "ready"
-                  );
-                },
-              },
             }))
         }
         renderChatMenu={renderChatMenu}

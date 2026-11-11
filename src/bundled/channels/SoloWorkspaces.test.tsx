@@ -370,7 +370,7 @@ it("opens the exact project from an empty project's New chat row", async () => {
   }
 });
 
-it("shares a workspace frame while keeping lead selection, disclosure and chat creation separate", async () => {
+it("shares a workspace frame while keeping selection, disclosure and chat creation separate", async () => {
   const h = fixture();
   const store = h.store();
   const onTask = vi.fn();
@@ -444,70 +444,6 @@ it("shares a workspace frame while keeping lead selection, disclosure and chat c
     expect(create[0]).toHaveAccessibleName("New chat in Chats");
     await user.click(screen.getByRole("button", { name: "New chat in Chats" }));
     expect(h.onNew).toHaveBeenCalledExactlyOnceWith(undefined);
-  } finally {
-    store.dispose();
-  }
-});
-
-it("selects a Lead workspace only once its separate Leads record is read, showing the owner's failure with Retry", async () => {
-  const h = fixture();
-  const store = h.store();
-  const onSelect = vi.fn();
-  let release: ((ready: boolean) => void) | undefined;
-  const refresh = vi.fn(
-    () =>
-      new Promise<boolean>((resolve) => {
-        release = resolve;
-      }),
-  );
-  const view = (status: "loading" | "ready" | "error") =>
-    h.view(store.queries, "workspace-leads", undefined, undefined, (parts) => (
-      <WorkspaceCompositionContext
-        value={{ ...parts, leads: { status, refresh } }}
-      >
-        <RegionWorkspace id="work" leadWorkspaceId="lead" onSelect={onSelect} />
-      </WorkspaceCompositionContext>
-    ));
-  await store.queries.ensure();
-  // The owner's failure shows before any click.
-  const { rerender, unmount } = render(view("error"));
-  const user = userEvent.setup();
-  try {
-    const title = await screen.findByRole("button", { name: "Work" });
-    const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("Lead unavailable.");
-    expect(title.closest("[data-navigation-card]")).toContainElement(alert);
-    await user.click(title);
-    try {
-      expect(refresh).toHaveBeenCalledOnce();
-      // A pending read is not an absent Lead, so no draft opens yet.
-      await user.click(title);
-      expect(refresh).toHaveBeenCalledOnce();
-      expect(onSelect).not.toHaveBeenCalled();
-    } finally {
-      await act(async () => release?.(false));
-    }
-    expect(onSelect).not.toHaveBeenCalled();
-    // Retry reads again but does not select.
-    await user.click(
-      within(screen.getByRole("alert")).getByRole("button", { name: "Retry" }),
-    );
-    expect(refresh).toHaveBeenCalledTimes(2);
-    rerender(view("loading"));
-    expect(screen.queryByRole("alert")).toBeNull();
-    await act(async () => release?.(true));
-    rerender(view("ready"));
-    expect(onSelect).not.toHaveBeenCalled();
-    await user.click(title);
-    expect(onSelect).toHaveBeenCalledOnce();
-    expect(refresh).toHaveBeenCalledTimes(2);
-    // A read that settles after the card is gone selects nothing.
-    rerender(view("loading"));
-    await user.click(title);
-    expect(refresh).toHaveBeenCalledTimes(3);
-    unmount();
-    await act(async () => release?.(true));
-    expect(onSelect).toHaveBeenCalledOnce();
   } finally {
     store.dispose();
   }

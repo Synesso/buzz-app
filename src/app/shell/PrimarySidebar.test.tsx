@@ -1126,7 +1126,7 @@ it("keeps ordinary Buzz creation controls until a workspace source opts in and r
   });
   await preferences.queries.ensure();
   Object.assign(h.session, {
-    soloPreferences: h.withLeads(preferences.queries),
+    soloPreferences: preferences.queries,
   });
   h.roster(
     h.session.channels
@@ -1232,7 +1232,7 @@ it.each(["New"])(
     });
     await preferences.queries.ensure();
     Object.assign(h.session, {
-      soloPreferences: h.withLeads(preferences.queries),
+      soloPreferences: preferences.queries,
     });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -1241,7 +1241,7 @@ it.each(["New"])(
     const select = vi.fn(async () => {});
     select.mockImplementationOnce(async () => {
       await gate;
-      throw new Error("The Lead could not be opened. Try again.");
+      throw new Error("The workspace could not be opened. Try again.");
     });
     const source = await h.register({
       composeWorkspaces: true,
@@ -1286,7 +1286,7 @@ it.each(["New"])(
       expect(open).not.toHaveBeenCalled();
       await act(async () => release());
       expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-        "The Lead could not be opened",
+        "The workspace could not be opened",
       );
       await user.click(within(dialog).getByRole("button", { name: "Retry" }));
       await waitFor(() => expect(dialog).not.toBeInTheDocument());
@@ -1333,7 +1333,7 @@ it("keeps an ordinary chat editor and pending save through task-source recovery"
     throw new Error("Couldn’t save the name. Try again.");
   });
   Object.assign(h.session, {
-    soloPreferences: h.withLeads(preferences.queries),
+    soloPreferences: preferences.queries,
     channelDetails: {
       ...h.session.channelDetails,
       available: true,
