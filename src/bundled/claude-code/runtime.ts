@@ -1710,8 +1710,14 @@ export class ClaudeRuntime {
     // Deliveries keep their order: a later one waits on this handover, and
     // one with nothing to wait for is handed over before `run` returns.
     if (!wait && !handoff.deferred && !admittedDeferred) await handed;
-    // The turn outlives `run`, which the host is told so it shows it as working.
-    workingUntil(done);
+    // The turn, its background tasks and the turns they start outlive `run`.
+    workingUntil(
+      done.then(async (result) => {
+        if (result.ok && !result.stopped && key !== COMMUNITY_SESSION)
+          await entry.sessions.idle(key).catch(() => undefined);
+        return result;
+      }),
+    );
     this.notify();
     this.watch(done, async (error) => {
       if (error)

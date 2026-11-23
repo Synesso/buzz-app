@@ -5342,6 +5342,63 @@ it("does not offer a shared native title to a later Solo source", async () => {
   }
 });
 
+it("shows a turn as working until its background tasks and the turns they start finish", async () => {
+  const f = setup([], { hold: true });
+  try {
+    await f.deliver({
+      type: "mention",
+      event: message("1", "start background"),
+    });
+    await vi.waitFor(() =>
+      expect(f.claudes().some((p) => p.prompts.length)).toBe(true),
+    );
+    const worker = f.claudes().find((p) => p.prompts.length);
+    if (!worker) throw new Error("no worker");
+    worker.emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [{ id: "background" }],
+    });
+    worker.finish();
+    let settled: unknown;
+    void f.workingUntil.mock.calls[0]?.[0].then((result) => {
+      settled = result;
+    });
+    worker.emit({
+      type: "system",
+      subtype: "session_state_changed",
+      state: "idle",
+    });
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(settled).toBeUndefined();
+    worker.emit({
+      type: "system",
+      subtype: "task_notification",
+      task_id: "background",
+    });
+    worker.emit({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [],
+    });
+    worker.emit({
+      type: "system",
+      subtype: "session_state_changed",
+      state: "working",
+    });
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(settled).toBeUndefined();
+    worker.emit({
+      type: "system",
+      subtype: "session_state_changed",
+      state: "idle",
+    });
+    await vi.waitFor(() => expect(settled).toMatchObject({ ok: true }));
+  } finally {
+    f.runtime.dispose();
+  }
+});
+
 it("keeps a background continuation on its source until native work drains", async () => {
   const f = setup([], { hold: true, solo: new Set([channel]) });
   const config = { ...DEFAULT_CONFIG, scope: "community" as const };
