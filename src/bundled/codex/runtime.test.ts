@@ -28,7 +28,10 @@ import {
   fileStore,
   type AgentStore,
 } from "../../features/agents/state";
-import { RESUMED_PROMPT } from "../../buzz-mcp/prompt";
+import {
+  RESUMED_PROMPT,
+  TOP_LEVEL_MENTION_PROMPT,
+} from "../../buzz-mcp/prompt";
 import type {
   Agent,
   AgentHandle,
@@ -4419,6 +4422,70 @@ it("takes a plugin's wake in its thread's conversation, as the plugin's and not 
   expect(input).toContain("CI failed: lint");
   expect(input).not.toContain("<buzz-event");
   expect(input).not.toContain(WAKE_ID);
+});
+it("answers a placed mention where the matching wake goes, framed as the owner's request", async () => {
+  const earlier = "d".repeat(64);
+  const turn = async (
+    make: (f: ReturnType<typeof fixture>) => Delivery,
+  ): Promise<{ context?: string; tags?: string[][]; text: string }> => {
+    const f = fixture();
+    try {
+      await f.runtime.run(make(f));
+      await vi.waitFor(() => expect(f.starts()).toHaveLength(1));
+      const text = JSON.parse(inputText(f.starts()[0]) ?? "[]")
+        .map((part: { text?: string }) => part.text ?? "")
+        .join("\n");
+      await f.tool("send", { audience: "everyone", text: "Placed" });
+      const context = text.match(/<context>[\s\S]*?<\/context>/)?.[0];
+      const tags = tagsOf(f).at(-1);
+      await f.complete(0);
+      return {
+        ...(context ? { context } : {}),
+        ...(tags ? { tags } : {}),
+        text,
+      };
+    } finally {
+      f.runtime.dispose();
+    }
+  };
+  /** The owner's top-level mention, placed by a plugin. */
+  const placed =
+    (placement: NonNullable<Delivery["placement"]>) =>
+    (f: ReturnType<typeof fixture>): Delivery => {
+      const delivery = f.delivery("@Codex back to the checklist");
+      if (delivery.trigger.type !== "mention")
+        throw new Error("Expected a mention");
+      return {
+        ...delivery,
+        trigger: {
+          ...delivery.trigger,
+          event: { ...delivery.trigger.event, tags: [["h", "channel"]] },
+        },
+        placement,
+      };
+    };
+  const woken =
+    (extra: { topLevel: true } | { root: string }) =>
+    (f: ReturnType<typeof fixture>): Delivery => {
+      const wake = pluginWake(f);
+      if (wake.trigger.type !== "plugin") throw new Error("Expected a wake");
+      return { ...wake, trigger: { ...wake.trigger, ...extra } };
+    };
+  for (const place of [{ topLevel: true }, { root: earlier }] as const) {
+    const { text, ...answer } = await turn(placed(place));
+    const { text: wokenText, ...wake } = await turn(woken(place));
+    expect(answer.context, JSON.stringify(place)).toBeDefined();
+    expect(answer.tags, JSON.stringify(place)).toBeDefined();
+    // The same session, context and default `send` target as the wake.
+    expect(answer, JSON.stringify(place)).toEqual(wake);
+    // Framed as the owner's mention, not the wake's channel-level text.
+    expect(text).toContain("<buzz-event>");
+    expect(wokenText).not.toContain("<buzz-event>");
+    if ("topLevel" in place) {
+      expect(text).toContain(TOP_LEVEL_MENTION_PROMPT);
+      expect(text).not.toContain("Interest");
+    }
+  }
 });
 it("keeps a wake's text from posing as the turn's event", async () => {
   const f = fixture();

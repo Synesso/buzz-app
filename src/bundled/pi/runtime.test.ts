@@ -1,3 +1,4 @@
+import { TOP_LEVEL_MENTION_PROMPT } from "../../buzz-mcp/prompt";
 import { workspaceCanvas } from "../../features/solo/workspace";
 import type { SectionChoices } from "../../features/agent-harness/sections/choices";
 import { afterEach, expect, it, vi } from "vitest";
@@ -1467,6 +1468,60 @@ const pluginWake = (root?: string, where = channel) => ({
   text: "CI failed: lint",
   id: WAKE_ID,
   at: 200_000,
+});
+
+it("answers a placed mention where the matching wake goes, framed as the owner's request", async () => {
+  const mention = message("2", "@Pi back to the build", {
+    created_at: 110,
+    tags: [
+      ["h", channel],
+      ["p", self],
+    ],
+  });
+  // Pi's tools post from the context each delivery hands it.
+  const turn = async (
+    trigger: Delivery["trigger"],
+    extra: Partial<Delivery<Config>> = {},
+  ) => {
+    const { host, deliver } = setup();
+    await deliver(trigger, extra).run;
+    const params = host.requests("deliver")[0]?.params ?? {};
+    return {
+      key: params.key,
+      context: params.context,
+      block: String(params.text).match(/<context>[\s\S]*?<\/context>/)?.[0],
+    };
+  };
+  for (const [placement, wake] of [
+    [{ topLevel: true }, { ...pluginWake(), topLevel: true }],
+    [{ root: root.id }, pluginWake(root.id)],
+  ] as const) {
+    const placed = await turn(
+      { type: "mention", event: mention },
+      { placement },
+    );
+    const woken = await turn(wake);
+    const where = (context = "") =>
+      context
+        .split("\n")
+        .filter((line) =>
+          /^(Scope|Session scope|Channel|Thread root):/.test(line),
+        );
+    expect(placed.context, JSON.stringify(placement)).toEqual(
+      "topLevel" in placement ? { channel } : { channel, root: root.id },
+    );
+    // The same session and the same context for Pi's tools as the wake.
+    expect(placed.key, JSON.stringify(placement)).toEqual(woken.key);
+    expect(placed.context, JSON.stringify(placement)).toEqual(woken.context);
+    expect(where(placed.block), JSON.stringify(placement)).toEqual(
+      where(woken.block),
+    );
+    // Framed as a mention: no wake or Interest wording at the top level.
+    if ("topLevel" in placement) {
+      expect(placed.block).toContain(TOP_LEVEL_MENTION_PROMPT);
+      expect(placed.block).not.toContain("Interest");
+    } else expect(placed.block).toEqual(woken.block);
+  }
 });
 
 it("keeps a Pi run going until every placed destination has its final reply", async () => {

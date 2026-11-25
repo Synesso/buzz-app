@@ -16,7 +16,11 @@ import {
   promptMessage,
   promptSections,
 } from "../../features/agents/activity-transcript";
-import { RESUMED_PROMPT, TOP_LEVEL_PROMPT } from "../../buzz-mcp/prompt";
+import {
+  RESUMED_PROMPT,
+  TOP_LEVEL_MENTION_PROMPT,
+  TOP_LEVEL_PROMPT,
+} from "../../buzz-mcp/prompt";
 import { STEER_NOTE, steerPrompt } from "../claude-code/prompt";
 import { STEER } from "../../features/agents/activity-transcript";
 import type { Agent, Delivery } from "../../features/agents/service";
@@ -454,6 +458,70 @@ it("leaves a protected Buzz tool call to Goose's own tool review", async () => {
     expect(f.published.at(-1)?.content).toBe("Howzit!");
   } finally {
     f.runtime.dispose();
+  }
+});
+
+it("answers a placed mention where the matching wake goes, framed as the owner's request", async () => {
+  const earlier = message("1", "The checklist");
+  const turn = async (
+    trigger: Delivery["trigger"],
+    extra: Partial<Delivery> = {},
+  ) => {
+    const f = setup({ hold: true, thread: [earlier] });
+    try {
+      await f.run(trigger, extra);
+      await vi.waitFor(() =>
+        expect(f.goose()?.turns.length).toBeGreaterThan(0),
+      );
+      const process = f.goose();
+      const turn = process?.turns.at(-1);
+      if (!process || !turn) throw new Error("Goose turn did not start");
+      await process.mcp(turn.sessionId, "tools/call", {
+        name: "send",
+        arguments: { audience: "everyone", text: "Placed" },
+      });
+      return {
+        context: turn.text.match(/<context>[\s\S]*?<\/context>/)?.[0],
+        tags: f.published.at(-1)?.tags,
+      };
+    } finally {
+      f.runtime.dispose();
+    }
+  };
+  const mention = {
+    type: "mention",
+    event: message("2", "@Gander back to the checklist: add a step"),
+  } as const;
+  for (const [placement, wake] of [
+    [{ topLevel: true }, { ...pluginWake(), topLevel: true }],
+    [{ root: earlier.id }, pluginWake(earlier.id)],
+  ] as const) {
+    const placed = await turn(mention, { placement });
+    const woken = await turn(wake);
+    const where = (context = "") =>
+      context
+        .split("\n")
+        .filter((line) =>
+          /^(Scope|Session scope|Channel|Thread root):/.test(line),
+        );
+    expect(placed.tags, JSON.stringify(placement)).toEqual(
+      "topLevel" in placement
+        ? [["h", channel]]
+        : [
+            ["h", channel],
+            ["e", earlier.id, "", "reply"],
+          ],
+    );
+    // The same session and default `send` target as the wake.
+    expect(where(placed.context), JSON.stringify(placement)).toEqual(
+      where(woken.context),
+    );
+    expect(placed.tags, JSON.stringify(placement)).toEqual(woken.tags);
+    // Framed as a mention: no wake or Interest wording at the top level.
+    if ("topLevel" in placement) {
+      expect(placed.context).toContain(TOP_LEVEL_MENTION_PROMPT);
+      expect(placed.context).not.toContain("Interest");
+    } else expect(placed.context).toEqual(woken.context);
   }
 });
 
