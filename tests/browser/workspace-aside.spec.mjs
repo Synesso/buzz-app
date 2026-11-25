@@ -1,6 +1,7 @@
 // A workspace's aside sits over the history's end edge, left of its scrollbar.
 // Docked, the history's content and the composer keep to the width beside it;
-// when the reader is narrow, it floats over the history while open.
+// when the reader is narrow, it floats over the history and the composer's end
+// while open.
 import { test, expect } from "./fixture.mjs";
 import { open, settle } from "./timeline.mjs";
 
@@ -273,9 +274,9 @@ test("a narrow reader floats the aside over the history while the page opens it"
   ).toBeLessThanOrEqual(1);
   const full = await region.evaluate((element) => element.clientWidth);
 
-  // Opened, it floats over the history's end edge, not the composer, takes
-  // no width, holds focus, and scrolls its own content. WebKit doesn't focus
-  // a clicked button, so the control opens it from the keyboard.
+  // Opened, it floats over the history's end edge down to the reader's
+  // bottom, takes no width, holds focus, and scrolls its own content. WebKit
+  // doesn't focus a clicked button, so the control opens it from the keyboard.
   await show.focus();
   await page.keyboard.press("Enter");
   await expect(plan(page)).toBeVisible();
@@ -283,8 +284,8 @@ test("a narrow reader floats the aside over the history while the page opens it"
   await settle(page, region);
   const at = await layout(page);
   expect(at.aside.top).toBeGreaterThanOrEqual(at.history.top);
-  expect(at.aside.bottom).toBeLessThanOrEqual(at.history.bottom);
-  expect(at.aside.bottom).toBeLessThanOrEqual(at.composer.top);
+  expect(Math.abs(at.aside.bottom - at.reader.bottom)).toBeLessThanOrEqual(1);
+  expect(at.aside.bottom).toBeGreaterThan(at.composer.bottom);
   expect(at.aside.right).toBeLessThanOrEqual(at.history.right - at.scrollbar);
   expect(await region.evaluate((element) => element.clientWidth)).toBe(full);
   const offset = await region.evaluate((element) => element.scrollTop);
@@ -304,8 +305,28 @@ test("a narrow reader floats the aside over the history while the page opens it"
     end.region.scrollHeight - end.region.clientHeight - 1,
   );
   expect(end.region.bottom).toBeLessThan(end.aside.bottom);
+  expect(end.region.bottom).toBeGreaterThan(end.composer.top);
   expect(end.aside.bottom).toBeLessThanOrEqual(page.viewportSize().height);
   await expect(plan(page).getByText("End of plan")).toBeInViewport();
+  // The card's end paints over the composer's end.
+  expect(
+    await page.evaluate(
+      ({ x, y }) => {
+        const [hit, ...under] = document.elementsFromPoint(x, y);
+        return {
+          card: !!hit?.closest("[data-fixture-aside-scroll]"),
+          composer: under.some((node) => node.matches("form")),
+        };
+      },
+      {
+        x: Math.min(end.aside.right, end.composer.right) - 24,
+        y:
+          (end.composer.top +
+            Math.min(end.composer.bottom, end.region.bottom)) /
+          2,
+      },
+    ),
+  ).toEqual({ card: true, composer: true });
 
   // Escape closes only the overlay and returns focus to the page's control.
   await page.keyboard.press("Escape");
@@ -316,6 +337,33 @@ test("a narrow reader floats the aside over the history while the page opens it"
   await expect(plan(page)).toBeVisible();
   await region.click({ position: { x: 40, y: 40 } });
   await expect(plan(page)).toBeHidden();
+  // So does a press on the composer's start, which it doesn't cover.
+  await show.click();
+  await expect(plan(page)).toBeVisible();
+  await region
+    .locator("xpath=..")
+    .locator("form")
+    .click({ position: { x: 40, y: 20 } });
+  await expect(plan(page)).toBeHidden();
+  // And so does focus leaving it for the row, so a draft's Send, which it
+  // covers, is uncovered when Shift+Tab reaches it.
+  const composer = region.locator("xpath=..").locator("form");
+  await composer.locator('[contenteditable="true"]').click();
+  await page.keyboard.type("A draft");
+  await show.focus();
+  await page.keyboard.press("Enter");
+  await expect(aside(page)).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(plan(page)).toBeHidden();
+  const send = composer.getByRole("button", { name: "Send message" });
+  await expect(send).toBeFocused();
+  const sent = await send.boundingBox();
+  expect(
+    await send.evaluate(
+      (element, { x, y }) => element.contains(document.elementFromPoint(x, y)),
+      { x: sent.x + sent.width / 2, y: sent.y + sent.height / 2 },
+    ),
+  ).toBe(true);
 
   // Widening docks it again, restoring the docked state.
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -430,10 +478,14 @@ test.describe("beside a narrow dock", () => {
     const row = region.locator(`[data-message-id="${root.id}"]`);
     await row.scrollIntoViewIfNeeded();
     await row.hover({ position: { x: 24, y: 8 } });
-    // A click alone, as a press on the history would close the overlay.
+    // A click alone that keeps focus in the overlay, as a press or focus on
+    // the history would close it.
     await row
       .getByRole("button", { name: /^View thread:/ })
-      .dispatchEvent("click");
+      .evaluate((button) => {
+        button.focus = () => {};
+        button.click();
+      });
     const dock = page.locator("[data-panel-dock]");
     await expect(dock).toBeVisible();
     await dock.evaluate((element) =>
