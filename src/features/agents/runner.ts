@@ -40,6 +40,7 @@ import type { LocalAgentActivity, WorkOutcome } from "./local-activity";
 import type { MentionRefusal } from "./owner-attestation";
 import type { MentionPlacement } from "./mention-placement";
 import { threadReference } from "../relay/thread-reference";
+import { agentAudience } from "../relay/audience";
 import {
   hasEventProof,
   type ReadFilter,
@@ -4142,7 +4143,7 @@ export class AgentRunners {
                 !channel.metadataPending
               )
                 work.confirmSolo(channel.name ?? undefined);
-              work.reply(published.id);
+              work.reply(published.id, !agentAudience(published));
             }
             return published;
           } catch (error) {
