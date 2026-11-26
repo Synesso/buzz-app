@@ -1,3 +1,4 @@
+import { toolTitle } from "../../buzz-mcp/tool-titles";
 import type { AgentSessionAssociation } from "./session-admission";
 import type { MentionRefusal } from "./owner-attestation";
 
@@ -16,8 +17,16 @@ export type WorkOutcome = Readonly<{
   error?: string;
   stopped?: true;
 }>;
-/** A harness step: its own tool name and, when known, what it acts on. */
-export type WorkStep = Readonly<{ tool: string; target?: string }>;
+/** Where a step's tool comes from, when its harness can tell: the Buzz
+ * server. Any other tool has none. */
+export type StepOrigin = "buzz";
+/** A harness step: its own tool name and, when known, what it acts on and
+ * where the tool comes from. */
+export type WorkStep = Readonly<{
+  tool: string;
+  target?: string;
+  origin?: StepOrigin;
+}>;
 export type LocalVisibleMessage = Readonly<{
   id: string;
   author: string;
@@ -422,7 +431,8 @@ export function createLocalAgentActivity() {
           current.state === state &&
           current.error === error &&
           current.step?.tool === next?.tool &&
-          current.step?.target === next?.target
+          current.step?.target === next?.target &&
+          current.step?.origin === next?.origin
         )
           return;
         const { step: _step, stoppable, ...rest } = current;
@@ -610,13 +620,14 @@ export function createLocalAgentActivity() {
         // newer message, without presenting the earlier work as successful.
         supersede: () => update("superseded"),
         /** Latest live step reported by the plugin; display only. */
-        step: (tool: string, target?: string) => {
+        step: (tool: string, target?: string, origin?: StepOrigin) => {
           const name = tool.trim().slice(0, 80);
           const on = target?.trim().replace(/\s+/g, " ").slice(0, 160);
           if (name)
             update("working", undefined, {
               tool: name,
               ...(on ? { target: on } : {}),
+              ...(origin === "buzz" ? { origin } : {}),
             });
         },
         finish: (result: WorkOutcome) => {
@@ -798,5 +809,10 @@ export function stepText(step: WorkStep) {
   if (phrase && step.target) return phrase(step.target);
   const known = untargeted[step.tool] ?? verbs[step.tool];
   if (known) return known;
-  return step.target ? `${step.tool} · ${step.target}` : step.tool;
+  // A Buzz tool's bare name is the same string as another server's `search`
+  // or a harness's own file `edit`, so only a step its harness identified as
+  // Buzz is titled. Any other shows the name as reported.
+  const name =
+    (step.origin === "buzz" ? toolTitle(step.tool) : undefined) ?? step.tool;
+  return step.target ? `${name} · ${step.target}` : name;
 }
