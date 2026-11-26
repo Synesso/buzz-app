@@ -34,6 +34,7 @@ import { ProfileChannels } from "./ProfileChannels";
 import { useChannelIdentityNames } from "../../features/identity-names/react";
 import { usePresenceStatus } from "../../features/presence/react";
 import {
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -42,6 +43,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { openFromPanel, PanelPane } from "../../features/panels/opening-pane";
 import {
   CheckCircleIcon,
   CopyIcon,
@@ -205,13 +207,16 @@ export function ProfilePanel({
   );
   const pubkey = profilePanelKey(target) ?? activityKey;
   const owned = useAgent(agents, pubkey ?? "");
+  const pane = useContext(PanelPane);
   if (!pubkey) return <p>Unsupported profile.</p>;
   if (connection.status !== "ready")
     return <p>Connect to a community to view this profile.</p>;
-  // An agent's activity opens a turn's conversation in this community.
+  // An agent's activity opens a turn's conversation in this community, as a
+  // link in this panel does: beside it when it sits in a pane.
   const openConversation = conversationOpener(
     navigation,
     panelCommunity(connection.scope, connection.viewer),
+    (navigator, opening) => openFromPanel(navigator, opening, pane),
   );
   const owner =
     agents &&
@@ -299,6 +304,7 @@ function OwnedAgentProfile({
   // Unsaved edits are asked about before a link replaces this profile.
   const [unsaved, reportUnsaved] = useAgentSaveReports();
   const [leaving, setLeaving] = useState<string>();
+  const pane = useContext(PanelPane);
   if (leaving && !unsaved.dirty) setLeaving(undefined);
   if (!owned) return null;
   const address = navigation?.snapshot().entry.target;
@@ -309,7 +315,7 @@ function OwnedAgentProfile({
   const go = (link: string) => {
     const target = conversationTarget(link);
     if (target && navigation) {
-      void navigation.open(target);
+      openFromPanel(navigation, target, pane);
       return true;
     }
     return (context?.push ?? context?.open)?.(link);
